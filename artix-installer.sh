@@ -51,45 +51,59 @@ read -rp "THIS WILL ERASE THESE PARTITIONS. Continue? (yes/no): " CONFIRM
 # FORMAT + MOUNT
 ########################################
 
-echo "[1/6] Formatting partitions..."
+echo "[1/7] Formatting partitions..."
 mkfs.fat -F 32 "$EFI"
 mkswap "$SWAP"
 mkfs.ext4 "$ROOT"
 
-echo "[2/6] Enabling swap..."
 swapon "$SWAP"
 
-echo "[3/6] Mounting system..."
 mount "$ROOT" /mnt
 mkdir -p /mnt/boot/efi
 mount "$EFI" /mnt/boot/efi
 
 ########################################
-# BASE SYSTEM
+# BASE SYSTEM + ARCH SUPPORT
 ########################################
 
-echo "[4/6] Installing base system..."
+echo "[2/7] Installing base system + arch support..."
 
 basestrap /mnt base base-devel dinit elogind-dinit \
     linux-zen linux-firmware \
     iwd iwd-dinit networkmanager networkmanager-dinit \
-    sudo
+    sudo artix-archlinux-support
 
-echo "[5/6] Generating fstab..."
+########################################
+# ENABLE ARCH REPOS
+########################################
+
+cat >> /mnt/etc/pacman.conf << 'EOF'
+
+[extra]
+Include = /etc/pacman.d/mirrorlist-arch
+
+[multilib]
+Include = /etc/pacman.d/mirrorlist-arch
+EOF
+
+########################################
+# FSTAB
+########################################
+
 fstabgen -U /mnt >> /mnt/etc/fstab
 
 ########################################
-# PASS DATA INTO CHROOT
+# PASS VARIABLES
 ########################################
 
 export HOSTNAME="$HOSTNAME"
 export USERNAME="$USERNAME"
 
 ########################################
-# POST INSTALL SCRIPT (SYSTEM SETUP)
+# POST INSTALL (CHROOT STAGE)
 ########################################
 
-cat > /mnt/root/postinstall.sh << 'EOF'
+cat > /mnt/root/postinstall.sh << EOF
 #!/bin/bash
 set -e
 
@@ -97,42 +111,31 @@ HOSTNAME="$HOSTNAME"
 USERNAME="$USERNAME"
 
 set_password() {
-    local user="$1"
-
+    local user="\$1"
     while true; do
         set +e
-        passwd "$user"
-        STATUS=$?
+        passwd "\$user"
+        STATUS=\$?
         set -e
-
-        [[ $STATUS -eq 0 ]] && break
-        echo "Password failed. Try again."
+        [[ \$STATUS -eq 0 ]] && break
+        echo "Try again..."
     done
 }
 
-########################################
-# TIME
-########################################
-
-echo "[1/8] Timezone"
+echo "[1/10] Timezone"
 ln -sf /usr/share/zoneinfo/UTC /etc/localtime
 hwclock --systohc
 
-########################################
-# LOCALE
-########################################
-
-echo "[2/8] Locale"
+echo "[2/10] Locale"
 sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
 locale-gen
 echo 'LANG="en_US.UTF-8"' > /etc/locale.conf
 
-########################################
-# BOOTLOADER
-########################################
+echo "[3/10] Keyring + Arch support init"
+pacman-key --init
+pacman-key --populate archlinux
 
-echo "[3/8] Bootloader"
-
+echo "[4/10] Bootloader"
 pacman -Sy --noconfirm grub os-prober efibootmgr
 
 grub-install \
@@ -142,48 +145,27 @@ grub-install \
 
 grub-mkconfig -o /boot/grub/grub.cfg
 
-########################################
-# USERS
-########################################
-
-echo "[4/8] Root password"
+echo "[5/10] Users"
 set_password root
 
-echo "[5/8] User creation"
-useradd -m "$USERNAME"
-usermod -aG wheel "$USERNAME"
+useradd -m "\$USERNAME"
+usermod -aG wheel "\$USERNAME"
+set_password "\$USERNAME"
 
-set_password "$USERNAME"
-
-########################################
-# SUDO (WHEEL ENABLED)
-########################################
-
-echo "[6/8] Sudo setup"
-
+echo "[6/10] Sudo"
 echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/10-wheel
 chmod 440 /etc/sudoers.d/10-wheel
 
-########################################
-# HOSTNAME
-########################################
-
-echo "[7/8] Hostname setup"
-
-echo "$HOSTNAME" > /etc/hostname
+echo "[7/10] Hostname"
+echo "\$HOSTNAME" > /etc/hostname
 
 cat > /etc/hosts << HOSTS
 127.0.0.1   localhost
 ::1         localhost
-127.0.1.1   $HOSTNAME.localdomain $HOSTNAME
+127.0.1.1   \$HOSTNAME.localdomain \$HOSTNAME
 HOSTS
 
-########################################
-# SYSTEM SERVICES
-########################################
-
-echo "[8/8] Enabling system services"
-
+echo "[8/10] Core services + Plasma"
 pacman -Sy --noconfirm \
   dbus dbus-dinit \
   elogind elogind-dinit \
@@ -193,7 +175,8 @@ pacman -Sy --noconfirm \
   pipewire pipewire-pulse wireplumber \
   pipewire-dinit pipewire-pulse-dinit wireplumber-dinit \
   flatpak \
-  discord telegram-desktop steam
+  discord telegram-desktop steam \
+  plasma plasma-meta
 
 dinitctl enable dbus
 dinitctl enable elogind
@@ -201,61 +184,73 @@ dinitctl enable sddm
 dinitctl enable bluetoothd
 dinitctl enable turnstiled
 
-echo "POST INSTALL COMPLETE"
-EOF
-
-chmod +x /mnt/root/postinstall.sh
-
-########################################
-# RUN CHROOT
-########################################
-
-echo "[6/6] Running system install..."
-artix-chroot /mnt /root/postinstall.sh
-
-rm /mnt/root/postinstall.sh
-
-########################################
-# FIRST LOGIN SETUP SCRIPTS
-########################################
-
-echo "Creating first-login setup scripts..."
-
-cat > /mnt/home/$USERNAME/install-paru.sh << EOF
+echo "[9/10] Firstboot setup script"
+cat > /home/\$USERNAME/firstboot.sh << 'FEOF'
 #!/bin/bash
 set -e
 
-sudo pacman -S --needed base-devel git
+FLAG="\$HOME/.firstboot-done"
+[[ -f "\$FLAG" ]] && exit 0
 
-git clone https://aur.archlinux.org/paru.git
-cd paru
-makepkg -si
-EOF
-
-chmod +x /mnt/home/$USERNAME/install-paru.sh
-chown $USERNAME:$USERNAME /mnt/home/$USERNAME/install-paru.sh
-
-cat > /mnt/home/$USERNAME/first-login.sh << EOF
-#!/bin/bash
-
-echo "Enabling user services..."
+echo "First boot setup..."
 
 dinitctl enable pipewire
 dinitctl enable pipewire-pulse
 dinitctl enable wireplumber
 
-echo "Done."
+sudo pacman -S --needed base-devel git
+
+if [[ ! -d "\$HOME/paru" ]]; then
+    git clone https://aur.archlinux.org/paru.git "\$HOME/paru"
+fi
+
+cd "\$HOME/paru"
+makepkg -si --noconfirm
+cd "\$HOME"
+
+flatpak remote-add --if-not-exists flathub \
+  https://flathub.org/repo/flathub.flatpakrepo
+
+paru -S --noconfirm wayvr-git || true
+flatpak install -y flathub io.github.vysp3r.Wivrn || true
+
+touch "\$FLAG"
+
+echo "Done — rebooting..."
+sleep 5
+reboot
+FEOF
+
+chmod +x /home/\$USERNAME/firstboot.sh
+chown \$USERNAME:\$USERNAME /home/\$USERNAME/firstboot.sh
+
+mkdir -p /home/\$USERNAME/.config/autostart
+
+cat > /home/\$USERNAME/.config/autostart/firstboot.desktop << 'DCEF'
+[Desktop Entry]
+Type=Application
+Exec=/home/$USERNAME/firstboot.sh
+Hidden=false
+NoDisplay=false
+Name=First Boot Setup
+X-GNOME-Autostart-enabled=true
+DCEF
+
+chown -R \$USERNAME:\$USERNAME /home/\$USERNAME/.config
+
+echo "INSTALL COMPLETE"
 EOF
 
-chmod +x /mnt/home/$USERNAME/first-login.sh
-chown $USERNAME:$USERNAME /mnt/home/$USERNAME/first-login.sh
+chmod +x /mnt/root/postinstall.sh
 
 ########################################
-# DONE
+# RUN INSTALL
 ########################################
+
+artix-chroot /mnt /root/postinstall.sh
+rm /mnt/root/postinstall.sh
 
 echo
 echo "================================="
-echo " INSTALL COMPLETE "
-echo " Reboot when ready."
+echo " INSTALL COMPLETE - REBOOT NOW "
 echo "================================="
