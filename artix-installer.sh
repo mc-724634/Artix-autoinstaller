@@ -175,7 +175,9 @@ pacman -Sy \
   pipewire pipewire-pulse wireplumber \
   pipewire-dinit pipewire-pulse-dinit wireplumber-dinit \
   flatpak \
-  discord telegram-desktop steam gamemode lib32-gamemode\
+  discord telegram-desktop steam gamemode lib32-gamemode \
+  avahi avahi-dinit \
+  ufw ufw-dinit \
   plasma plasma-meta
 
 echo "[9/10] Firstboot setup script"
@@ -216,10 +218,19 @@ flatpak remote-add --if-not-exists flathub \
 paru -S --noconfirm wayvr-bin || true
 flatpak install -y flathub io.github.vysp3r.Wivrn || true
 
+sudo rm -rf paru
+
+sudo dinitctl enable ufw
+
+sudo ufw allow 5353/udp
+
+sudo ufw allow 9757
+
 sudo dinitctl enable dbus
 sudo dinitctl enable elogind
 sudo dinitctl enable turnstiled
 sudo dinitctl enable bluetoothd
+sudo dinitctl enable avahi-daemon
 sudo dinitctl enable sddm
 
 touch "\$FLAG"
