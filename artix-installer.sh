@@ -7,27 +7,85 @@ echo " Artix Linux Automated Installer "
 echo "================================="
 echo
 
-echo "[1/10] Installing base system..."
+echo "======================================="
+echo " Disk Setup (post-cfdisk stage)"
+echo "======================================="
+echo
+
+echo "Make sure you already ran cfdisk and created:"
+echo "  1 = EFI"
+echo "  2 = SWAP"
+echo "  3 = ROOT"
+echo
+
+echo "Select disk type:"
+echo "1) Virtual Machine (vda)"
+echo "2) Real Machine (nvme0n1)"
+echo
+
+read -rp "Choice [1/2]: " TARGET
+
+if [[ "$TARGET" == "1" ]]; then
+    DISK="vda"
+elif [[ "$TARGET" == "2" ]]; then
+    DISK="nvme0n1"
+else
+    echo "Invalid choice."
+    exit 1
+fi
+
+EFI="/dev/${DISK}1"
+SWAP="/dev/${DISK}2"
+ROOT="/dev/${DISK}3"
+
+echo
+echo "Using:"
+echo "  EFI  -> $EFI"
+echo "  SWAP -> $SWAP"
+echo "  ROOT -> $ROOT"
+echo
+
+read -rp "This will FORMAT partitions. Continue? (yes/no): " CONFIRM
+[[ "$CONFIRM" == "yes" ]] || exit 1
+
+echo "[1/5] Formatting partitions..."
+mkfs.fat -F 32 "$EFI"
+mkswap "$SWAP"
+mkfs.ext4 "$ROOT"
+
+echo "[2/5] Enabling swap..."
+swapon "$SWAP"
+
+echo "[3/5] Mounting root..."
+mount "$ROOT" /mnt
+
+echo "[4/5] Mounting EFI..."
+mkdir -p /mnt/boot/efi
+mount "$EFI" /mnt/boot/efi
+
+echo "[5/5] Done!"
+
+echo "[6/15] Installing base system..."
 basestrap /mnt base base-devel dinit elogind-dinit
 basestrap /mnt linux-zen linux-firmware
 
-echo "[2/10] Generating fstab..."
+echo "[7/15] Generating fstab..."
 fstabgen -U /mnt >> /mnt/etc/fstab
 
-echo "[3/10] Creating post-install script..."
+echo "[8/15] Creating post-install script..."
 
 cat > /mnt/root/postinstall.sh << 'EOF'
 #!/bin/bash
 
 set -e
 
-echo "[1/7] Installing editor..."
+echo "[9/15] Installing editor..."
 pacman -Sy --noconfirm nano
 
-echo "[2/7] Setting locale configuration..."
+echo "[10/15] Setting locale configuration..."
 echo 'export LANG="en_US.UTF-8"' > /etc/locale.conf
 
-echo "[3/7] Installing bootloader..."
+echo "[11/15] Installing bootloader..."
 pacman -Sy --noconfirm grub os-prober efibootmgr
 
 grub-install \
@@ -37,16 +95,16 @@ grub-install \
 
 grub-mkconfig -o /boot/grub/grub.cfg
 
-echo "[4/7] Set root password"
+echo "[12/15] Set root password"
 passwd
 
-echo "[5/7] Creating user..."
+echo "[13/15] Creating user..."
 useradd -m cowboybub2003
 
-echo "[6/7] Set user password"
+echo "[14/15] Set user password"
 passwd cowboybub2003
 
-echo "[7/7] Installing networking..."
+echo "[15/15] Installing networking..."
 pacman -Sy --noconfirm \
     iwd \
     iwd-dinit \
