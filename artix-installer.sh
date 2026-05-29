@@ -1,11 +1,14 @@
 #!/bin/bash
-
 set -e
 
 echo "================================="
 echo " Artix Linux Automated Installer "
 echo "================================="
 echo
+
+########################################
+# DISK SELECTION
+########################################
 
 echo "======================================="
 echo " Disk Setup (post-cfdisk stage)"
@@ -25,14 +28,11 @@ echo
 
 read -rp "Choice [1/2]: " TARGET
 
-if [[ "$TARGET" == "1" ]]; then
-    DISK="vda"
-elif [[ "$TARGET" == "2" ]]; then
-    DISK="nvme0n1"
-else
-    echo "Invalid choice."
-    exit 1
-fi
+case "$TARGET" in
+    1) DISK="vda" ;;
+    2) DISK="nvme0n1" ;;
+    *) echo "Invalid choice"; exit 1 ;;
+esac
 
 EFI="/dev/${DISK}1"
 SWAP="/dev/${DISK}2"
@@ -45,110 +45,127 @@ echo "  SWAP -> $SWAP"
 echo "  ROOT -> $ROOT"
 echo
 
-read -rp "This will FORMAT partitions. Continue? (yes/no): " CONFIRM
+read -rp "THIS WILL ERASE PARTITIONS. Continue? (yes/no): " CONFIRM
 [[ "$CONFIRM" == "yes" ]] || exit 1
 
-echo "[1/5] Formatting partitions..."
+########################################
+# FORMAT + MOUNT
+########################################
+
+echo "[1/6] Formatting partitions..."
 mkfs.fat -F 32 "$EFI"
 mkswap "$SWAP"
 mkfs.ext4 "$ROOT"
 
-echo "[2/5] Enabling swap..."
+echo "[2/6] Enabling swap..."
 swapon "$SWAP"
 
-echo "[3/5] Mounting root..."
+echo "[3/6] Mounting system..."
 mount "$ROOT" /mnt
-
-echo "[4/5] Mounting EFI..."
 mkdir -p /mnt/boot/efi
 mount "$EFI" /mnt/boot/efi
 
-echo "[5/5] Done!"
+########################################
+# BASE SYSTEM
+########################################
 
-echo "[6/15] Installing base system..."
+echo "[4/6] Installing base system..."
 basestrap /mnt base base-devel dinit elogind-dinit
 basestrap /mnt linux-zen linux-firmware
 
-echo "[7/15] Generating fstab..."
+echo "[5/6] Generating fstab..."
 fstabgen -U /mnt >> /mnt/etc/fstab
 
-echo "[8/15] Creating post-install script..."
+########################################
+# POST INSTALL SCRIPT (CHROOT)
+########################################
 
 cat > /mnt/root/postinstall.sh << 'EOF'
 #!/bin/bash
-
 set -e
 
-echo "[9/15] Installing editor..."
-pacman -Sy --noconfirm nano
+echo "===== POST INSTALL START ====="
 
-echo "[10/15] Setting locale configuration..."
+########################################
+# SAFE PASSWORD FUNCTION
+########################################
+set_password() {
+    local user="$1"
+
+    while true; do
+        if [[ "$user" == "root" ]]; then
+            passwd root
+        else
+            passwd "$user"
+        fi
+
+        if [[ $? -eq 0 ]]; then
+            break
+        fi
+
+        echo "Password setup failed. Try again."
+    done
+}
+
+########################################
+# LOCALE
+########################################
+
+echo "[1/6] Locale setup"
 echo 'export LANG="en_US.UTF-8"' > /etc/locale.conf
 
-echo "[11/15] Installing bootloader..."
+########################################
+# BOOTLOADER
+########################################
+
+echo "[2/6] Installing bootloader"
 pacman -Sy --noconfirm grub os-prober efibootmgr
 
 grub-install \
-    --target=x86_64-efi \
-    --efi-directory=/boot/efi \
-    --bootloader-id=grub
+  --target=x86_64-efi \
+  --efi-directory=/boot/efi \
+  --bootloader-id=grub
 
 grub-mkconfig -o /boot/grub/grub.cfg
 
-echo "[12/15] Set root password"
-passwd
+########################################
+# PASSWORDS (SAFE)
+########################################
 
-echo "[13/15] Creating user..."
+echo "[3/6] Root password"
+set_password root
+
+echo "[4/6] Creating user"
 useradd -m cowboybub2003
 
-echo "[14/15] Set user password"
-passwd cowboybub2003
+echo "[5/6] User password"
+set_password cowboybub2003
 
-echo "[15/15] Installing networking..."
+########################################
+# NETWORKING
+########################################
+
+echo "[6/6] Installing networking"
 pacman -Sy --noconfirm \
-    iwd \
-    iwd-dinit \
-    networkmanager \
-    networkmanager-dinit
+  iwd iwd-dinit \
+  networkmanager networkmanager-dinit
 
-echo
-echo "========================================"
-echo " MANUAL STEPS REQUIRED BEFORE REBOOT "
-echo "========================================"
-echo
-echo "1. Set timezone:"
-echo "   ln -sf /usr/share/zoneinfo/Region/City /etc/localtime"
-echo
-echo "2. Sync hardware clock:"
-echo "   hwclock --systohc"
-echo
-echo "3. Edit locale.gen:"
-echo "   nano /etc/locale.gen"
-echo
-echo "4. Generate locales:"
-echo "   locale-gen"
-echo
-echo "5. Set hostname:"
-echo "   nano /etc/hostname"
-echo
-echo "6. Configure hosts file:"
-echo "   nano /etc/hosts"
-echo
-echo "After completing those steps:"
-echo "   exit"
-echo "   reboot"
-echo
+echo "===== POST INSTALL COMPLETE ====="
 EOF
 
 chmod +x /mnt/root/postinstall.sh
 
+########################################
+# AUTO CHROOT EXECUTION
+########################################
+
+echo "[6/6] Running post-install automatically in chroot..."
+artix-chroot /mnt /root/postinstall.sh
+
+rm /mnt/root/postinstall.sh
+
 echo
 echo "================================="
-echo " Base install complete!"
+echo " INSTALL COMPLETE "
+echo " You can now reboot safely."
 echo "================================="
-echo
-echo "Next run:"
-echo
-echo "artix-chroot /mnt"
-echo "/root/postinstall.sh"
-echo
