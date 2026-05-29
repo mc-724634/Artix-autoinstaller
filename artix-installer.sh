@@ -11,6 +11,7 @@ echo
 ########################################
 
 read -rp "Enter hostname: " HOSTNAME
+read -rp "Enter username: " USERNAME
 
 echo
 echo "Select disk type:"
@@ -36,6 +37,12 @@ echo "  EFI  -> $EFI"
 echo "  SWAP -> $SWAP"
 echo "  ROOT -> $ROOT"
 echo
+
+########################################
+# SAFETY CHECK
+########################################
+
+[[ -b "$ROOT" ]] || { echo "Root partition missing"; exit 1; }
 
 read -rp "THIS WILL ERASE THESE PARTITIONS. Continue? (yes/no): " CONFIRM
 [[ "$CONFIRM" == "yes" ]] || exit 1
@@ -64,16 +71,17 @@ mount "$EFI" /mnt/boot/efi
 echo "[4/6] Installing base system..."
 basestrap /mnt base base-devel dinit elogind-dinit \
     linux-zen linux-firmware \
-    iwd iwd-dinit networkmanager networkmanager-dinit
+    iwd iwd-dinit networkmanager networkmanager-dinit sudo
 
 echo "[5/6] Generating fstab..."
 fstabgen -U /mnt >> /mnt/etc/fstab
 
 ########################################
-# PASS DATA INTO CHROOT
+# PASS VARIABLES INTO CHROOT
 ########################################
 
 export HOSTNAME="$HOSTNAME"
+export USERNAME="$USERNAME"
 
 ########################################
 # POST INSTALL SCRIPT
@@ -82,6 +90,9 @@ export HOSTNAME="$HOSTNAME"
 cat > /mnt/root/postinstall.sh << 'EOF'
 #!/bin/bash
 set -e
+
+HOSTNAME="$HOSTNAME"
+USERNAME="$USERNAME"
 
 set_password() {
     local user="$1"
@@ -92,27 +103,24 @@ set_password() {
         STATUS=$?
         set -e
 
-        if [[ $STATUS -eq 0 ]]; then
-            break
-        fi
-
+        [[ $STATUS -eq 0 ]] && break
         echo "Password failed. Try again."
     done
 }
 
 ########################################
-# TIME + CLOCK
+# TIME
 ########################################
 
-echo "[1/6] Timezone setup"
+echo "[1/7] Timezone setup"
 ln -sf /usr/share/zoneinfo/UTC /etc/localtime
 hwclock --systohc
 
 ########################################
-# LOCALE (fully automated)
+# LOCALE
 ########################################
 
-echo "[2/6] Locale setup"
+echo "[2/7] Locale setup"
 sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
 locale-gen
 echo 'LANG="en_US.UTF-8"' > /etc/locale.conf
@@ -121,7 +129,8 @@ echo 'LANG="en_US.UTF-8"' > /etc/locale.conf
 # BOOTLOADER
 ########################################
 
-echo "[3/6] Installing bootloader"
+echo "[3/7] Bootloader setup"
+
 pacman -Sy --noconfirm grub os-prober efibootmgr
 
 grub-install \
@@ -132,21 +141,36 @@ grub-install \
 grub-mkconfig -o /boot/grub/grub.cfg
 
 ########################################
-# PASSWORDS
+# USERS
 ########################################
 
-echo "[4/6] Root password"
+echo "[4/7] Root password"
 set_password root
 
-echo "[5/6] Creating user"
-useradd -m cowboybub2003
+echo "[5/7] Creating user: $USERNAME"
+useradd -m "$USERNAME"
 
-echo "[6/6] User password"
-set_password cowboybub2003
+echo "[5.1/7] Adding user to wheel group"
+usermod -aG wheel "$USERNAME"
+
+set_password "$USERNAME"
+
+########################################
+# SUDO (WHEEL ENABLED AUTOMATICALLY)
+########################################
+
+echo "[6/7] Enabling sudo for wheel group"
+
+pacman -Sy --noconfirm sudo
+
+echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/10-wheel
+chmod 440 /etc/sudoers.d/10-wheel
 
 ########################################
 # HOSTNAME + HOSTS
 ########################################
+
+echo "[7/7] Hostname setup"
 
 echo "$HOSTNAME" > /etc/hostname
 
@@ -165,14 +189,10 @@ chmod +x /mnt/root/postinstall.sh
 # AUTO CHROOT EXECUTION
 ########################################
 
-echo "[6/6] Running post-install automatically in chroot..."
+echo "[6/6] Running post-install automatically..."
 artix-chroot /mnt /root/postinstall.sh
 
 rm /mnt/root/postinstall.sh
-
-########################################
-# DONE
-########################################
 
 echo
 echo "================================="
