@@ -188,6 +188,18 @@ FLAG="\$HOME/.firstboot-done"
 
 echo "First boot setup..."
 
+sudo dinitctl enable iwd
+sudo dinitctl enable NetworkManager
+
+echo "[*] Configuring NetworkManager to use iwd backend..."
+
+sudo mkdir -p /etc/NetworkManager/conf.d
+
+cat <<EOF | sudo tee /etc/NetworkManager/conf.d/wifi_backend.conf
+[device]
+wifi.backend=iwd
+EOF
+
 sudo pacman -S --needed base-devel git
 
 if [[ ! -d "\$HOME/paru" ]]; then
