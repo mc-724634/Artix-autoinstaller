@@ -7,17 +7,14 @@ echo " Artix Linux Automated Installer "
 echo "================================="
 echo
 
-echo "[1/10] Starting time synchronization..."
-dinitctl start chrony
-
-echo "[2/10] Installing base system..."
+echo "[1/10] Installing base system..."
 basestrap /mnt base base-devel dinit elogind-dinit
 basestrap /mnt linux-zen linux-firmware
 
-echo "[3/10] Generating fstab..."
+echo "[2/10] Generating fstab..."
 fstabgen -U /mnt >> /mnt/etc/fstab
 
-echo "[4/10] Creating post-install script..."
+echo "[3/10] Creating post-install script..."
 
 cat > /mnt/root/postinstall.sh << 'EOF'
 #!/bin/bash
