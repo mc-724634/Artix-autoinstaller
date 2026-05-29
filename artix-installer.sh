@@ -7,20 +7,12 @@ echo "================================="
 echo
 
 ########################################
-# DISK SELECTION
+# USER INPUTS
 ########################################
 
-echo "======================================="
-echo " Disk Setup (post-cfdisk stage)"
-echo "======================================="
-echo
+read -rp "Enter hostname: " HOSTNAME
 
-echo "Make sure you already ran cfdisk and created:"
-echo "  1 = EFI"
-echo "  2 = SWAP"
-echo "  3 = ROOT"
 echo
-
 echo "Select disk type:"
 echo "1) Virtual Machine (vda)"
 echo "2) Real Machine (nvme0n1)"
@@ -45,7 +37,7 @@ echo "  SWAP -> $SWAP"
 echo "  ROOT -> $ROOT"
 echo
 
-read -rp "THIS WILL ERASE PARTITIONS. Continue? (yes/no): " CONFIRM
+read -rp "THIS WILL ERASE THESE PARTITIONS. Continue? (yes/no): " CONFIRM
 [[ "$CONFIRM" == "yes" ]] || exit 1
 
 ########################################
@@ -70,11 +62,18 @@ mount "$EFI" /mnt/boot/efi
 ########################################
 
 echo "[4/6] Installing base system..."
-basestrap /mnt base base-devel dinit elogind-dinit
-basestrap /mnt linux-zen linux-firmware
+basestrap /mnt base base-devel dinit elogind-dinit \
+    linux-zen linux-firmware \
+    iwd iwd-dinit networkmanager networkmanager-dinit
 
 echo "[5/6] Generating fstab..."
 fstabgen -U /mnt >> /mnt/etc/fstab
+
+########################################
+# PASS DATA INTO CHROOT
+########################################
+
+export HOSTNAME="$HOSTNAME"
 
 ########################################
 # POST INSTALL SCRIPT
@@ -84,48 +83,45 @@ cat > /mnt/root/postinstall.sh << 'EOF'
 #!/bin/bash
 set -e
 
-echo "===== POST INSTALL START ====="
-
-########################################
-# SAFE PASSWORD FUNCTION (FIXED)
-########################################
 set_password() {
     local user="$1"
 
     while true; do
-        echo
-        echo "Setting password for $user"
-
         set +e
-        if [[ "$user" == "root" ]]; then
-            passwd root
-        else
-            passwd "$user"
-        fi
+        passwd "$user"
         STATUS=$?
         set -e
 
         if [[ $STATUS -eq 0 ]]; then
-            echo "Password set successfully for $user"
             break
-        else
-            echo "Password mismatch or error. Try again."
         fi
+
+        echo "Password failed. Try again."
     done
 }
 
 ########################################
-# LOCALE
+# TIME + CLOCK
 ########################################
 
-echo "[1/6] Locale setup"
+echo "[1/6] Timezone setup"
+ln -sf /usr/share/zoneinfo/UTC /etc/localtime
+hwclock --systohc
+
+########################################
+# LOCALE (fully automated)
+########################################
+
+echo "[2/6] Locale setup"
+sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+locale-gen
 echo 'export LANG="en_US.UTF-8"' > /etc/locale.conf
 
 ########################################
 # BOOTLOADER
 ########################################
 
-echo "[2/6] Installing bootloader"
+echo "[3/6] Installing bootloader"
 pacman -Sy --noconfirm grub os-prober efibootmgr
 
 grub-install \
@@ -136,28 +132,31 @@ grub-install \
 grub-mkconfig -o /boot/grub/grub.cfg
 
 ########################################
-# PASSWORDS (NOW SAFE)
+# PASSWORDS
 ########################################
 
-echo "[3/6] Root password"
+echo "[4/6] Root password"
 set_password root
 
-echo "[4/6] Creating user"
+echo "[5/6] Creating user"
 useradd -m cowboybub2003
 
-echo "[5/6] User password"
+echo "[6/6] User password"
 set_password cowboybub2003
 
 ########################################
-# NETWORKING
+# HOSTNAME + HOSTS
 ########################################
 
-echo "[6/6] Installing networking"
-pacman -Sy --noconfirm \
-  iwd iwd-dinit \
-  networkmanager networkmanager-dinit
+echo "$HOSTNAME" > /etc/hostname
 
-echo "===== POST INSTALL COMPLETE ====="
+cat > /etc/hosts << HOSTS
+127.0.0.1   localhost
+::1         localhost
+127.0.1.1   $HOSTNAME.localdomain $HOSTNAME
+HOSTS
+
+echo "POST INSTALL COMPLETE"
 EOF
 
 chmod +x /mnt/root/postinstall.sh
@@ -166,13 +165,17 @@ chmod +x /mnt/root/postinstall.sh
 # AUTO CHROOT EXECUTION
 ########################################
 
-echo "[6/6] Running post-install automatically..."
+echo "[6/6] Running post-install automatically in chroot..."
 artix-chroot /mnt /root/postinstall.sh
 
 rm /mnt/root/postinstall.sh
 
+########################################
+# DONE
+########################################
+
 echo
 echo "================================="
 echo " INSTALL COMPLETE "
-echo " You can now reboot safely."
+echo " Reboot when ready."
 echo "================================="
