@@ -175,7 +175,7 @@ pacman -Sy --noconfirm \
   pipewire pipewire-pulse wireplumber \
   pipewire-dinit pipewire-pulse-dinit wireplumber-dinit \
   flatpak \
-  discord telegram-desktop steam \
+  discord telegram-desktop steam gamemode lib32-gamemode\
   plasma plasma-meta
 
 dinitctl enable dbus
