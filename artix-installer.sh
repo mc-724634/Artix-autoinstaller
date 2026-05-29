@@ -207,7 +207,7 @@ if [[ ! -d "\$HOME/paru" ]]; then
 fi
 
 cd "\$HOME/paru"
-makepkg -si --noconfirm
+su -c 'makepkg -si --noconfirm' $USER
 cd "\$HOME"
 
 flatpak remote-add --if-not-exists flathub \
