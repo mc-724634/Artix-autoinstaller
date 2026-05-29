@@ -201,7 +201,7 @@ sudo pacman -S --needed base-devel git
 flatpak remote-add --if-not-exists flathub \
   https://flathub.org/repo/flathub.flatpakrepo
 
-flatpak install -y flathub io.github.vysp3r.Wivrn || true
+flatpak install wivrn || true
 
 sudo dinitctl enable ufw
 
@@ -218,9 +218,10 @@ sudo dinitctl enable sddm
 
 touch "\$FLAG"
 
-echo "Done — rebooting..."
-sleep 5
-reboot
+echo "Done"
+
+sudo rm -rf ~/firstboot.sh
+
 FEOF
 
 chmod +x /home/\$USERNAME/firstboot.sh
