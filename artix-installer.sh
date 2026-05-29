@@ -129,10 +129,6 @@ set_password() {
     done
 }
 
-echo "[1/10] Timezone"
-ln -sf /usr/share/zoneinfo/UTC /etc/localtime
-hwclock --systohc
-
 echo "[2/10] Locale"
 sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
 locale-gen
@@ -243,6 +239,6 @@ artix-chroot /mnt /root/postinstall.sh
 rm /mnt/root/postinstall.sh
 
 echo
-echo "================================="
-echo " INSTALL COMPLETE - REBOOT NOW "
-echo "================================="
+echo "==============================================================================="
+echo " Run artix-chroot /mnt &  ln -sf /usr/share/zoneinfo/Region/City /etc/localtime"
+echo "==============================================================================="
