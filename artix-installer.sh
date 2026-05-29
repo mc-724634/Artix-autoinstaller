@@ -115,7 +115,7 @@ hwclock --systohc
 echo "[2/6] Locale setup"
 sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
 locale-gen
-echo 'export LANG="en_US.UTF-8"' > /etc/locale.conf
+echo 'LANG="en_US.UTF-8"' > /etc/locale.conf
 
 ########################################
 # BOOTLOADER
