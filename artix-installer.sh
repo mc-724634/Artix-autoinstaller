@@ -179,7 +179,7 @@ pacman -Sy \
   pipewire-dinit pipewire-pulse-dinit wireplumber-dinit \
   flatpak \
   discord telegram-desktop steam gamemode lib32-gamemode \
-  avahi avahi-dinit fastfetch \
+  avahi avahi-dinit fastfetch konsole firefox \
   ufw ufw-dinit \
   plasma plasma-meta
 
