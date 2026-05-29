@@ -200,26 +200,12 @@ echo "First boot setup..."
 sudo dinitctl enable iwd
 sudo dinitctl enable NetworkManager
 
-echo "[*] Configuring NetworkManager to use iwd backend..."
-
-sudo mkdir -p /etc/NetworkManager/conf.d
-
 sudo pacman -S --needed base-devel git
-
-if [[ ! -d "\$HOME/paru" ]]; then
-    git clone https://aur.archlinux.org/paru.git "$HOME/paru"
-fi
-
-su - "$USERNAME" -c 'cd ~/paru && makepkg -si --noconfirm'
-cd "\$HOME"
 
 flatpak remote-add --if-not-exists flathub \
   https://flathub.org/repo/flathub.flatpakrepo
 
-paru -S --noconfirm wayvr-bin || true
 flatpak install -y flathub io.github.vysp3r.Wivrn || true
-
-sudo rm -rf paru
 
 sudo dinitctl enable ufw
 
