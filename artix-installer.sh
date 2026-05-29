@@ -204,6 +204,12 @@ flatpak remote-add --if-not-exists flathub \
 paru -S --noconfirm wayvr-bin || true
 flatpak install -y flathub io.github.vysp3r.Wivrn || true
 
+sudo dinitctl enable dbus
+sudo dinitctl enable elogind
+sudo dinitctl enable turnstiled
+sudo dinitctl enable bluetoothd
+sudo dinitctl enable sddm
+
 touch "\$FLAG"
 
 echo "Done — rebooting..."
