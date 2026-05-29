@@ -178,12 +178,6 @@ pacman -Sy \
   discord telegram-desktop steam gamemode lib32-gamemode\
   plasma plasma-meta
 
-dinitctl enable dbus
-dinitctl enable elogind
-dinitctl enable sddm
-dinitctl enable bluetoothd
-dinitctl enable turnstiled
-
 echo "[9/10] Firstboot setup script"
 cat > /home/\$USERNAME/firstboot.sh << 'FEOF'
 #!/bin/bash
@@ -193,10 +187,6 @@ FLAG="\$HOME/.firstboot-done"
 [[ -f "\$FLAG" ]] && exit 0
 
 echo "First boot setup..."
-
-dinitctl enable pipewire
-dinitctl enable pipewire-pulse
-dinitctl enable wireplumber
 
 sudo pacman -S --needed base-devel git
 
@@ -211,7 +201,7 @@ cd "\$HOME"
 flatpak remote-add --if-not-exists flathub \
   https://flathub.org/repo/flathub.flatpakrepo
 
-paru -S --noconfirm wayvr-git || true
+paru -S --noconfirm wayvr-bin || true
 flatpak install -y flathub io.github.vysp3r.Wivrn || true
 
 touch "\$FLAG"
