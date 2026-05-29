@@ -73,6 +73,13 @@ basestrap /mnt base base-devel dinit elogind-dinit \
     iwd iwd-dinit networkmanager networkmanager-dinit \
     sudo artix-archlinux-support
 
+mkdir -p /mnt/etc/NetworkManager/conf.d
+
+cat > /mnt/etc/NetworkManager/conf.d/wifi_backend.conf <<EOF
+[device]
+wifi.backend=iwd
+EOF
+
 ########################################
 # ENABLE ARCH REPOS
 ########################################
@@ -197,19 +204,13 @@ echo "[*] Configuring NetworkManager to use iwd backend..."
 
 sudo mkdir -p /etc/NetworkManager/conf.d
 
-cat <<EOF | sudo tee /etc/NetworkManager/conf.d/wifi_backend.conf
-[device]
-wifi.backend=iwd
-EOF
-
 sudo pacman -S --needed base-devel git
 
 if [[ ! -d "\$HOME/paru" ]]; then
-    git clone https://aur.archlinux.org/paru.git "\$HOME/paru"
+    git clone https://aur.archlinux.org/paru.git "$HOME/paru"
 fi
 
-cd "\$HOME/paru"
-su -c 'makepkg -si --noconfirm' $USER
+su - "$USERNAME" -c 'cd ~/paru && makepkg -si --noconfirm'
 cd "\$HOME"
 
 flatpak remote-add --if-not-exists flathub \
@@ -242,20 +243,6 @@ FEOF
 
 chmod +x /home/\$USERNAME/firstboot.sh
 chown \$USERNAME:\$USERNAME /home/\$USERNAME/firstboot.sh
-
-mkdir -p /home/\$USERNAME/.config/autostart
-
-cat > /home/\$USERNAME/.config/autostart/firstboot.desktop << 'DCEF'
-[Desktop Entry]
-Type=Application
-Exec=/home/$USERNAME/firstboot.sh
-Hidden=false
-NoDisplay=false
-Name=First Boot Setup
-X-GNOME-Autostart-enabled=true
-DCEF
-
-chown -R \$USERNAME:\$USERNAME /home/\$USERNAME/.config
 
 echo "INSTALL COMPLETE"
 EOF
