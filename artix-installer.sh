@@ -166,7 +166,7 @@ cat > /etc/hosts << HOSTS
 HOSTS
 
 echo "[8/10] Core services + Plasma"
-pacman -Sy --noconfirm \
+pacman -Sy \
   dbus dbus-dinit \
   elogind elogind-dinit \
   sddm sddm-dinit \
