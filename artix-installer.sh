@@ -7,25 +7,17 @@ echo " Artix Linux Automated Installer "
 echo "================================="
 echo
 
-echo "[1/10] Mounting partitions..."
-
-swapon /dev/nvme0n1p2
-mount /dev/nvme0n1p3 /mnt
-
-mkdir -p /mnt/boot/efi
-mount /dev/nvme0n1p1 /mnt/boot/efi
-
-echo "[2/10] Starting time synchronization..."
+echo "[1/10] Starting time synchronization..."
 dinitctl start chrony
 
-echo "[3/10] Installing base system..."
+echo "[2/10] Installing base system..."
 basestrap /mnt base base-devel dinit elogind-dinit
 basestrap /mnt linux-zen linux-firmware
 
-echo "[4/10] Generating fstab..."
+echo "[3/10] Generating fstab..."
 fstabgen -U /mnt >> /mnt/etc/fstab
 
-echo "[5/10] Creating post-install script..."
+echo "[4/10] Creating post-install script..."
 
 cat > /mnt/root/postinstall.sh << 'EOF'
 #!/bin/bash
