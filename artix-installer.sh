@@ -77,7 +77,7 @@ echo "[5/6] Generating fstab..."
 fstabgen -U /mnt >> /mnt/etc/fstab
 
 ########################################
-# POST INSTALL SCRIPT (CHROOT)
+# POST INSTALL SCRIPT
 ########################################
 
 cat > /mnt/root/postinstall.sh << 'EOF'
@@ -87,23 +87,30 @@ set -e
 echo "===== POST INSTALL START ====="
 
 ########################################
-# SAFE PASSWORD FUNCTION
+# SAFE PASSWORD FUNCTION (FIXED)
 ########################################
 set_password() {
     local user="$1"
 
     while true; do
+        echo
+        echo "Setting password for $user"
+
+        set +e
         if [[ "$user" == "root" ]]; then
             passwd root
         else
             passwd "$user"
         fi
+        STATUS=$?
+        set -e
 
-        if [[ $? -eq 0 ]]; then
+        if [[ $STATUS -eq 0 ]]; then
+            echo "Password set successfully for $user"
             break
+        else
+            echo "Password mismatch or error. Try again."
         fi
-
-        echo "Password setup failed. Try again."
     done
 }
 
@@ -129,7 +136,7 @@ grub-install \
 grub-mkconfig -o /boot/grub/grub.cfg
 
 ########################################
-# PASSWORDS (SAFE)
+# PASSWORDS (NOW SAFE)
 ########################################
 
 echo "[3/6] Root password"
@@ -159,7 +166,7 @@ chmod +x /mnt/root/postinstall.sh
 # AUTO CHROOT EXECUTION
 ########################################
 
-echo "[6/6] Running post-install automatically in chroot..."
+echo "[6/6] Running post-install automatically..."
 artix-chroot /mnt /root/postinstall.sh
 
 rm /mnt/root/postinstall.sh
