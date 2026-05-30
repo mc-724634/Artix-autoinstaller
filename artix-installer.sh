@@ -80,6 +80,9 @@ cat > /mnt/etc/NetworkManager/conf.d/wifi_backend.conf <<EOF
 wifi.backend=iwd
 EOF
 
+dinitctl enable iwd
+dinitctl enable NetworkManager
+
 ########################################
 # ENABLE ARCH REPOS
 ########################################
@@ -193,8 +196,13 @@ FLAG="\$HOME/.firstboot-done"
 
 echo "First boot setup..."
 
-sudo dinitctl enable iwd
-sudo dinitctl enable NetworkManager
+git clone https://aur.archlinux.org/paru.git
+
+cd paru
+
+makepkg -si
+
+paru -Sy wayvr-bin
 
 sudo pacman -S --needed base-devel git
 
