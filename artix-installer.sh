@@ -80,9 +80,6 @@ cat > /mnt/etc/NetworkManager/conf.d/wifi_backend.conf <<EOF
 wifi.backend=iwd
 EOF
 
-dinitctl enable iwd
-dinitctl enable NetworkManager
-
 ########################################
 # ENABLE ARCH REPOS
 ########################################
@@ -185,6 +182,9 @@ pacman -Sy \
   avahi avahi-dinit fastfetch konsole firefox nano \
   ufw ufw-dinit \
   plasma plasma-meta
+
+dinitctl enable iwd
+dinitctl enable NetworkManager
 
 echo "[9/10] Firstboot setup script"
 cat > /home/\$USERNAME/firstboot.sh << 'FEOF'
