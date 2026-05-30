@@ -183,6 +183,8 @@ pacman -Sy \
   ufw ufw-dinit \
   plasma plasma-meta
 
+pacman -Sy --needed base-devel git
+
 echo "[9/10] Firstboot setup script"
 cat > /home/\$USERNAME/firstboot.sh << 'FEOF'
 #!/bin/bash
