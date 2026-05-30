@@ -183,9 +183,6 @@ pacman -Sy \
   ufw ufw-dinit \
   plasma plasma-meta
 
-dinitctl enable iwd
-dinitctl enable NetworkManager
-
 echo "[9/10] Firstboot setup script"
 cat > /home/\$USERNAME/firstboot.sh << 'FEOF'
 #!/bin/bash
@@ -196,11 +193,14 @@ FLAG="\$HOME/.firstboot-done"
 
 echo "First boot setup..."
 
+dinitctl enable iwd
+dinitctl enable NetworkManager
+
 git clone https://aur.archlinux.org/paru.git
 
 cd paru
 
-makepkg -si
+su -$USER makepkg -si
 
 paru -Sy wayvr-bin
 
