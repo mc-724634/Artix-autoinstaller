@@ -188,21 +188,20 @@ pacman -Sy --needed base-devel git
 echo "[9/10] Firstboot setup script"
 cat > /home/\$USERNAME/firstboot.sh << 'FEOF'
 #!/bin/bash
-set -e
 
 FLAG="\$HOME/.firstboot-done"
 [[ -f "\$FLAG" ]] && exit 0
 
 echo "First boot setup..."
 
-dinitctl enable iwd
-dinitctl enable NetworkManager
+sudo dinitctl enable iwd
+sudo dinitctl enable NetworkManager
 
 git clone https://aur.archlinux.org/paru.git
 
 cd paru
 
-su -$USER makepkg -si
+su -$USERNAME makepkg -si
 
 paru -Sy wayvr-bin
 
