@@ -1,254 +1,62 @@
 #!/bin/bash
+
 set -e
 
-echo "================================="
-echo " Artix Linux Automated Installer "
-echo "================================="
-echo
+MOUNT="/mnt"
 
-########################################
-# USER INPUTS
-########################################
+dialog --msgbox "Welcome to Artix Installer (MVP)" 10 40
 
-read -rp "Enter hostname: " HOSTNAME
-read -rp "Enter username: " USERNAME
+# ----------------------------
+# DISK SELECTION
+# ----------------------------
+DISK=$(lsblk -dno NAME | sed 's|^|/dev/|' | \
+dialog --menu "Select disk to install to:" 15 50 8 3>&1 1>&2 2>&3)
 
-echo
-echo "Select disk type:"
-echo "1) Virtual Machine (vda)"
-echo "2) Real Machine (nvme0n1)"
-echo
+clear
+echo "Selected disk: $DISK"
 
-read -rp "Choice [1/2]: " TARGET
+# SAFETY CONFIRM
+dialog --yesno "THIS WILL ERASE $DISK. Continue?" 8 50 || exit 1
 
-case "$TARGET" in
-    1) DISK="vda" ;;
-    2) DISK="nvme0n1" ;;
-    *) echo "Invalid choice"; exit 1 ;;
-esac
+# ----------------------------
+# PARTITIONING
+# ----------------------------
+cfdisk "$DISK"
 
-EFI="/dev/${DISK}1"
-SWAP="/dev/${DISK}2"
-ROOT="/dev/${DISK}3"
+PART_ROOT="${DISK}1"
 
-echo
-echo "Using:"
-echo "  EFI  -> $EFI"
-echo "  SWAP -> $SWAP"
-echo "  ROOT -> $ROOT"
-echo
+# ----------------------------
+# FORMAT
+# ----------------------------
+mkfs.ext4 "$PART_ROOT"
 
-########################################
-# SAFETY CHECK
-########################################
+# ----------------------------
+# MOUNT
+# ----------------------------
+mount "$PART_ROOT" "$MOUNT"
 
-[[ -b "$ROOT" ]] || { echo "Root partition missing"; exit 1; }
+# ----------------------------
+# BASE INSTALL
+# ----------------------------
+basestrap "$MOUNT" base base-devel linux linux-firmware openrc elogind-openrc
 
-read -rp "THIS WILL ERASE THESE PARTITIONS. Continue? (yes/no): " CONFIRM
-[[ "$CONFIRM" == "yes" ]] || exit 1
-
-########################################
-# FORMAT + MOUNT
-########################################
-
-echo "[1/7] Formatting partitions..."
-mkfs.fat -F 32 "$EFI"
-mkswap "$SWAP"
-mkfs.ext4 "$ROOT"
-
-swapon "$SWAP"
-
-mount "$ROOT" /mnt
-mkdir -p /mnt/boot/efi
-mount "$EFI" /mnt/boot/efi
-
-########################################
-# BASE SYSTEM + ARCH SUPPORT
-########################################
-
-echo "[2/7] Installing base system + arch support..."
-
-basestrap /mnt base base-devel dinit elogind-dinit \
-    linux-zen linux-firmware \
-    iwd iwd-dinit networkmanager networkmanager-dinit \
-    sudo artix-archlinux-support
-
-mkdir -p /mnt/etc/NetworkManager/conf.d
-
-cat > /mnt/etc/NetworkManager/conf.d/wifi_backend.conf <<EOF
-[device]
-wifi.backend=iwd
-EOF
-
-########################################
-# ENABLE ARCH REPOS
-########################################
-
-cat >> /mnt/etc/pacman.conf << 'EOF'
-
-[extra]
-Include = /etc/pacman.d/mirrorlist-arch
-
-[multilib]
-Include = /etc/pacman.d/mirrorlist-arch
-EOF
-
-########################################
+# ----------------------------
 # FSTAB
-########################################
+# ----------------------------
+fstabgen -U "$MOUNT" >> "$MOUNT/etc/fstab"
 
-fstabgen -U /mnt >> /mnt/etc/fstab
+# ----------------------------
+# CHROOT CONFIG (basic)
+# ----------------------------
+artix-chroot "$MOUNT" /bin/bash <<EOF
 
-########################################
-# PASS VARIABLES
-########################################
+echo "Setting root password"
+passwd
 
-export HOSTNAME="$HOSTNAME"
-export USERNAME="$USERNAME"
-
-########################################
-# POST INSTALL (CHROOT STAGE)
-########################################
-
-cat > /mnt/root/postinstall.sh << EOF
-#!/bin/bash
-set -e
-
-HOSTNAME="$HOSTNAME"
-USERNAME="$USERNAME"
-
-set_password() {
-    local user="\$1"
-    while true; do
-        set +e
-        passwd "\$user"
-        STATUS=\$?
-        set -e
-        [[ \$STATUS -eq 0 ]] && break
-        echo "Try again..."
-    done
-}
-
-echo "[2/10] Locale"
-sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
-locale-gen
-echo 'LANG="en_US.UTF-8"' > /etc/locale.conf
-
-echo "[3/10] Keyring + Arch support init"
-pacman-key --init
-pacman-key --populate archlinux
-
-echo "[4/10] Bootloader"
-pacman -Sy --noconfirm grub os-prober efibootmgr
-
-grub-install \
-  --target=x86_64-efi \
-  --efi-directory=/boot/efi \
-  --bootloader-id=grub
-
+echo "Installing GRUB"
+grub-install --target=i386-pc $DISK
 grub-mkconfig -o /boot/grub/grub.cfg
 
-echo "[5/10] Users"
-set_password root
-
-useradd -m "\$USERNAME"
-usermod -aG wheel "\$USERNAME"
-set_password "\$USERNAME"
-
-echo "[6/10] Sudo"
-echo "%wheel ALL=(ALL:ALL) ALL" > /etc/sudoers.d/10-wheel
-chmod 440 /etc/sudoers.d/10-wheel
-
-echo "[7/10] Hostname"
-echo "\$HOSTNAME" > /etc/hostname
-
-cat > /etc/hosts << HOSTS
-127.0.0.1   localhost
-::1         localhost
-127.0.1.1   \$HOSTNAME.localdomain \$HOSTNAME
-HOSTS
-
-echo "[8/10] Core services + Plasma"
-pacman -Sy \
-  dbus dbus-dinit \
-  elogind elogind-dinit \
-  sddm sddm-dinit \
-  bluez bluez-utils bluez-dinit \
-  turnstile turnstile-dinit \
-  pipewire pipewire-pulse wireplumber \
-  pipewire-dinit pipewire-pulse-dinit wireplumber-dinit \
-  flatpak \
-  discord telegram-desktop steam gamemode lib32-gamemode \
-  avahi avahi-dinit fastfetch konsole firefox nano \
-  ufw ufw-dinit \
-  plasma plasma-meta
-
-pacman -Sy --needed base-devel git
-
-echo "[9/10] Firstboot setup script"
-cat > /home/\$USERNAME/firstboot.sh << 'FEOF'
-#!/bin/bash
-
-FLAG="\$HOME/.firstboot-done"
-[[ -f "\$FLAG" ]] && exit 0
-
-echo "First boot setup..."
-
-sudo dinitctl enable iwd
-sudo dinitctl enable NetworkManager
-
-git clone https://aur.archlinux.org/paru.git
-
-cd paru
-
-su -$USERNAME makepkg -si
-
-paru -Sy wayvr-bin
-
-sudo pacman -S --needed base-devel git
-
-flatpak remote-add --if-not-exists flathub \
-  https://flathub.org/repo/flathub.flatpakrepo
-
-flatpak install wivrn || true
-
-sudo dinitctl enable ufw
-
-sudo ufw allow 5353/udp
-
-sudo ufw allow 9757
-
-sudo dinitctl enable dbus
-sudo dinitctl enable elogind
-sudo dinitctl enable turnstiled
-sudo dinitctl enable bluetoothd
-sudo dinitctl enable avahi-daemon
-sudo dinitctl enable sddm
-
-touch "\$FLAG"
-
-echo "Done"
-
-sudo rm -rf ~/firstboot.sh
-
-FEOF
-
-chmod +x /home/\$USERNAME/firstboot.sh
-chown \$USERNAME:\$USERNAME /home/\$USERNAME/firstboot.sh
-
-echo "INSTALL COMPLETE"
 EOF
 
-chmod +x /mnt/root/postinstall.sh
-
-########################################
-# RUN INSTALL
-########################################
-
-artix-chroot /mnt /root/postinstall.sh
-rm /mnt/root/postinstall.sh
-
-echo
-echo "==============================================================================="
-echo " Run artix-chroot /mnt &  ln -sf /usr/share/zoneinfo/Region/City /etc/localtime"
-echo "==============================================================================="
+dialog --msgbox "Install complete. Reboot now." 10 40
