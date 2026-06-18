@@ -99,17 +99,42 @@ select_disk() {
 ### -----------------------------
 ### PARTITION (AUTO)
 ### -----------------------------
-prepare_disk() {
-    dialog --infobox "Preparing disk..." 3 30
+partition_disk() {
+
+    prepare_disk
+
+    dialog --yesno "WIPE AND PARTITION $DISK?\nTHIS WILL DESTROY ALL DATA" 8 60
+
+    [[ $? -ne 0 ]] && return
+
+    dialog --infobox "Creating partition table..." 3 40
     sleep 1
 
-    # kill anything using it
-    swapoff -a 2>/dev/null || true
+    parted -s "$DISK" mklabel gpt
 
-    umount -R /mnt 2>/dev/null || true
+    parted -s "$DISK" mkpart ESP fat32 1MiB 513MiB
+    parted -s "$DISK" set 1 esp on
 
-    # remove partitions from kernel view
-    blockdev --rereadpt "$DISK" 2>/dev/null || true
+    parted -s "$DISK" mkpart ROOT ext4 513MiB 90%
+    parted -s "$DISK" mkpart SWAP linux-swap 90% 100%
+
+    # IMPORTANT: refresh kernel view
+    partprobe "$DISK"
+    udevadm settle
+
+    if [[ "$DISK" == *"nvme"* ]]; then
+        EFI="${DISK}p1"
+        ROOT="${DISK}p2"
+        SWAP="${DISK}p3"
+    else
+        EFI="${DISK}1"
+        ROOT="${DISK}2"
+        SWAP="${DISK}3"
+    fi
+
+    echo "EFI=$EFI" >> "$CONFIG"
+    echo "ROOT=$ROOT" >> "$CONFIG"
+    echo "SWAP=$SWAP" >> "$CONFIG"
 }
 
 ### -----------------------------
