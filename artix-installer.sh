@@ -31,22 +31,21 @@ check_root() {
 ### DEPENDENCIES (SAFE)
 ### -----------------------------
 install_deps() {
-    dialog --infobox "Checking dependencies..." 5 40
-    sleep 1
-
-    local deps=(dialog basestrap artix-archlinux-support)
-
-    pacman -Sy --noconfirm >/dev/null 2>&1 || true
+    local deps=(dialog artix-archlinux-support)
 
     for pkg in "${deps[@]}"; do
-        if ! pacman -Qi "$pkg" >/dev/null 2>&1; then
-            dialog --infobox "Installing $pkg..." 5 40
-            pacman -S --noconfirm "$pkg" || {
+        if ! pacman -Qi "$pkg" &>/dev/null; then
+            pacman -Sy --noconfirm "$pkg" || {
                 dialog --msgbox "Failed installing $pkg" 6 40
                 exit 1
             }
         fi
     done
+
+    command -v basestrap >/dev/null || {
+        dialog --msgbox "basestrap missing - use official Artix ISO" 6 50
+        exit 1
+    }
 }
 
 ### -----------------------------
