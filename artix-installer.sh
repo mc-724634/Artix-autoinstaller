@@ -1,24 +1,57 @@
 #!/bin/bash
-set -e
 
-CONFIG="/tmp/artix-install.conf"
+CONFIG="/tmp/artix-installer.conf"
+LOG="/tmp/artix-installer.log"
 
-### -------------------------
-### BOOTSTRAP DEPENDENCIES
-### -------------------------
+exec 2> "$LOG"
+
+### -----------------------------
+### SAFE MODE (IMPORTANT)
+### -----------------------------
+set -u   # no unset vars (safer than set -e for installers)
+
+trap 'error_exit' ERR
+
+error_exit() {
+    dialog --msgbox "Installer crashed.\nCheck log:\n$LOG" 10 50
+    exit 1
+}
+
+### -----------------------------
+### ROOT CHECK
+### -----------------------------
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        dialog --msgbox "Run as root." 6 30
+        exit 1
+    fi
+}
+
+### -----------------------------
+### DEPENDENCIES (SAFE)
+### -----------------------------
 install_deps() {
+    dialog --infobox "Checking dependencies..." 5 40
+    sleep 1
+
     local deps=(dialog basestrap artix-archlinux-support)
 
+    pacman -Sy --noconfirm >/dev/null 2>&1 || true
+
     for pkg in "${deps[@]}"; do
-        if ! pacman -Qi "$pkg" &>/dev/null; then
-            pacman -Sy --noconfirm "$pkg"
+        if ! pacman -Qi "$pkg" >/dev/null 2>&1; then
+            dialog --infobox "Installing $pkg..." 5 40
+            pacman -S --noconfirm "$pkg" || {
+                dialog --msgbox "Failed installing $pkg" 6 40
+                exit 1
+            }
         fi
     done
 }
 
-### -------------------------
-### CONFIG
-### -------------------------
+### -----------------------------
+### INIT CONFIG
+### -----------------------------
 init_config() {
 cat > "$CONFIG" <<EOF
 DISK=""
@@ -27,41 +60,35 @@ ROOT=""
 SWAP=""
 INIT=""
 KERNEL=""
-TIMEZONE=""
+TIMEZONE="America/New_York"
 HOSTNAME="ArtixPC"
 USERNAME="user"
 EOF
 }
 
-source_config() {
+load_config() {
     source "$CONFIG"
 }
 
-### -------------------------
-### CHECK ROOT
-### -------------------------
-check_root() {
-    [[ $EUID -ne 0 ]] && {
-        dialog --msgbox "Run as root." 6 30
-        exit 1
-    }
-}
-
-### -------------------------
+### -----------------------------
 ### INTERNET CHECK
-### -------------------------
+### -----------------------------
 check_internet() {
-    if ! ping -c1 archlinux.org &>/dev/null; then
-        dialog --msgbox "No internet detected. Launching Network Manager..." 7 50
+    dialog --infobox "Checking internet..." 5 40
+    sleep 1
+
+    if ! ping -c1 archlinux.org >/dev/null 2>&1; then
+        dialog --msgbox "No internet. Opening network tool." 6 40
         nmtui
     fi
 }
 
-### -------------------------
+### -----------------------------
 ### DISK SELECT
-### -------------------------
+### -----------------------------
 select_disk() {
-    local disks=$(lsblk -dpno NAME,SIZE,MODEL | grep -E "/dev/(sd|nvme)")
+    local disks
+    disks=$(lsblk -dpno NAME,SIZE,MODEL | grep -E "/dev/(sd|nvme)" || true)
 
     DISK=$(dialog --menu "Select Disk" 20 70 10 \
         $(echo "$disks" | awk '{print $1" "$1" "$2" "$3}') \
@@ -70,11 +97,11 @@ select_disk() {
     echo "DISK=$DISK" >> "$CONFIG"
 }
 
-### -------------------------
-### PARTITION (AUTO GPT)
-### -------------------------
+### -----------------------------
+### PARTITION (AUTO)
+### -----------------------------
 partition_disk() {
-    dialog --yesno "Wipe and auto-partition $DISK ?" 7 50
+    dialog --yesno "WIPE $DISK and auto-partition?" 7 50
 
     if [[ $? -ne 0 ]]; then
         cfdisk "$DISK"
@@ -102,30 +129,30 @@ partition_disk() {
     echo "SWAP=$SWAP" >> "$CONFIG"
 }
 
-### -------------------------
+### -----------------------------
 ### FORMAT
-### -------------------------
-format_partitions() {
+### -----------------------------
+format_parts() {
     mkfs.fat -F32 "$EFI"
     mkfs.ext4 "$ROOT"
     mkswap "$SWAP"
     swapon "$SWAP"
 }
 
-### -------------------------
+### -----------------------------
 ### MOUNT
-### -------------------------
-mount_partitions() {
+### -----------------------------
+mount_parts() {
     mount "$ROOT" /mnt
     mkdir -p /mnt/boot/efi
     mount "$EFI" /mnt/boot/efi
 }
 
-### -------------------------
-### INIT SELECTION
-### -------------------------
+### -----------------------------
+### INIT SELECT
+### -----------------------------
 select_init() {
-    INIT=$(dialog --menu "Init System" 15 40 4 \
+    INIT=$(dialog --menu "Init System" 12 40 4 \
         dinit "Dinit (recommended)" \
         openrc "OpenRC" \
         runit "Runit" \
@@ -135,22 +162,22 @@ select_init() {
     echo "INIT=$INIT" >> "$CONFIG"
 }
 
-### -------------------------
-### KERNEL SELECTION
-### -------------------------
+### -----------------------------
+### KERNEL SELECT
+### -----------------------------
 select_kernel() {
-    KERNEL=$(dialog --menu "Kernel" 12 40 3 \
+    KERNEL=$(dialog --menu "Kernel" 10 40 3 \
         linux "Stable" \
-        lts "Long Term" \
-        zen "Performance" \
+        lts "LTS" \
+        zen "Zen" \
         3>&1 1>&2 2>&3)
 
     echo "KERNEL=$KERNEL" >> "$CONFIG"
 }
 
-### -------------------------
-### BASE INSTALL
-### -------------------------
+### -----------------------------
+### INSTALL BASE
+### -----------------------------
 install_base() {
     case "$INIT" in
         dinit)
@@ -164,9 +191,9 @@ install_base() {
     esac
 }
 
-### -------------------------
-### KERNEL INSTALL
-### -------------------------
+### -----------------------------
+### INSTALL KERNEL
+### -----------------------------
 install_kernel() {
     case "$KERNEL" in
         linux)
@@ -178,24 +205,22 @@ install_kernel() {
     esac
 }
 
-### -------------------------
+### -----------------------------
 ### FSTAB
-### -------------------------
-generate_fstab() {
+### -----------------------------
+gen_fstab() {
     fstabgen -U /mnt >> /mnt/etc/fstab
 }
 
-### -------------------------
+### -----------------------------
 ### CHROOT SCRIPT
-### -------------------------
-create_chroot() {
+### -----------------------------
+make_chroot() {
 cat > /mnt/root/post.sh <<EOF
 #!/bin/bash
 set -e
 
-TIMEZONE="\$(cat /tmp/artix-install.conf | grep TIMEZONE | cut -d= -f2)"
-HOSTNAME="\$(cat /tmp/artix-install.conf | grep HOSTNAME | cut -d= -f2)"
-KERNEL="\$(cat /tmp/artix-install.conf | grep KERNEL | cut -d= -f2)"
+source /tmp/artix-installer.conf
 
 ln -sf /usr/share/zoneinfo/\$TIMEZONE /etc/localtime
 hwclock --systohc
@@ -217,7 +242,6 @@ else
 fi
 
 grub-mkconfig -o /boot/grub/grub.cfg
-
 EOF
 
 chmod +x /mnt/root/post.sh
@@ -227,28 +251,32 @@ run_chroot() {
     artix-chroot /mnt /root/post.sh
 }
 
-### -------------------------
+### -----------------------------
 ### CLEANUP
-### -------------------------
+### -----------------------------
 cleanup() {
     umount -R /mnt
     swapoff -a
 }
 
-### -------------------------
-### MAIN FLOW
-### -------------------------
+### -----------------------------
+### MAIN
+### -----------------------------
 main() {
     check_root
+
     install_deps
     init_config
+    load_config
+
+    dialog --msgbox "Welcome to Artix Installer" 6 40
 
     check_internet
 
     select_disk
     partition_disk
-    format_partitions
-    mount_partitions
+    format_parts
+    mount_parts
 
     select_init
     select_kernel
@@ -256,14 +284,14 @@ main() {
     install_base
     install_kernel
 
-    generate_fstab
+    gen_fstab
 
-    create_chroot
+    make_chroot
     run_chroot
 
     cleanup
 
-    dialog --msgbox "Installation complete. Reboot now." 6 40
+    dialog --msgbox "Install complete!" 6 30
 }
 
 main
