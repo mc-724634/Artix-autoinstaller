@@ -99,33 +99,17 @@ select_disk() {
 ### -----------------------------
 ### PARTITION (AUTO)
 ### -----------------------------
-partition_disk() {
-    dialog --yesno "WIPE $DISK and auto-partition?" 7 50
+prepare_disk() {
+    dialog --infobox "Preparing disk..." 3 30
+    sleep 1
 
-    if [[ $? -ne 0 ]]; then
-        cfdisk "$DISK"
-        exit 0
-    fi
+    # kill anything using it
+    swapoff -a 2>/dev/null || true
 
-    parted "$DISK" --script mklabel gpt
-    parted "$DISK" --script mkpart ESP fat32 1MiB 513MiB
-    parted "$DISK" --script set 1 esp on
-    parted "$DISK" --script mkpart ROOT ext4 513MiB 90%
-    parted "$DISK" --script mkpart SWAP linux-swap 90% 100%
+    umount -R /mnt 2>/dev/null || true
 
-    if [[ "$DISK" == *"nvme"* ]]; then
-        EFI="${DISK}p1"
-        ROOT="${DISK}p2"
-        SWAP="${DISK}p3"
-    else
-        EFI="${DISK}1"
-        ROOT="${DISK}2"
-        SWAP="${DISK}3"
-    fi
-
-    echo "EFI=$EFI" >> "$CONFIG"
-    echo "ROOT=$ROOT" >> "$CONFIG"
-    echo "SWAP=$SWAP" >> "$CONFIG"
+    # remove partitions from kernel view
+    blockdev --rereadpt "$DISK" 2>/dev/null || true
 }
 
 ### -----------------------------
