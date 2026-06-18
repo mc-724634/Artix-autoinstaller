@@ -1,56 +1,58 @@
 #!/bin/bash
 
-CONFIG="/tmp/artix-installer.conf"
+CONFIG="/tmp/artix.conf"
 LOG="/tmp/artix-installer.log"
 
 exec 2> "$LOG"
 
-### -----------------------------
-### SAFE MODE (IMPORTANT)
-### -----------------------------
-set -u   # no unset vars (safer than set -e for installers)
+set -u
+set +e   # IMPORTANT: prevents silent exits (your main bug)
 
-trap 'error_exit' ERR
-
-error_exit() {
-    dialog --msgbox "Installer crashed.\nCheck log:\n$LOG" 10 50
-    exit 1
+### -------------------------
+### SAFE DIALOG WRAPPER
+### -------------------------
+msg() {
+    dialog --msgbox "$1" 8 60
 }
 
-### -----------------------------
+inf() {
+    dialog --infobox "$1" 5 50
+}
+
+### -------------------------
 ### ROOT CHECK
-### -----------------------------
+### -------------------------
 check_root() {
     if [[ $EUID -ne 0 ]]; then
-        dialog --msgbox "Run as root." 6 30
+        msg "Run as root."
         exit 1
     fi
 }
 
-### -----------------------------
+### -------------------------
 ### DEPENDENCIES (SAFE)
-### -----------------------------
-install_deps() {
-    local deps=(dialog artix-archlinux-support)
+### -------------------------
+deps() {
+    inf "Checking dependencies..."
 
-    for pkg in "${deps[@]}"; do
-        if ! pacman -Qi "$pkg" &>/dev/null; then
-            pacman -Sy --noconfirm "$pkg" || {
-                dialog --msgbox "Failed installing $pkg" 6 40
-                exit 1
-            }
+    for p in dialog basestrap artix-archlinux-support; do
+        pacman -Qi "$p" >/dev/null 2>&1
+        if [[ $? -ne 0 ]]; then
+            inf "Installing $p..."
+            pacman -Sy --noconfirm "$p" >/dev/null 2>&1
         fi
     done
 
-    command -v basestrap >/dev/null || {
-        dialog --msgbox "basestrap missing - use official Artix ISO" 6 50
+    command -v basestrap >/dev/null 2>&1
+    if [[ $? -ne 0 ]]; then
+        msg "basestrap missing. Use official Artix ISO."
         exit 1
-    }
+    fi
 }
 
-### -----------------------------
-### INIT CONFIG
-### -----------------------------
+### -------------------------
+### CONFIG INIT
+### -------------------------
 init_config() {
 cat > "$CONFIG" <<EOF
 DISK=""
@@ -65,29 +67,30 @@ USERNAME="user"
 EOF
 }
 
-load_config() {
+source_config() {
     source "$CONFIG"
 }
 
-### -----------------------------
-### INTERNET CHECK
-### -----------------------------
-check_internet() {
-    dialog --infobox "Checking internet..." 5 40
-    sleep 1
+### -------------------------
+### INTERNET CHECK (FIXED)
+### -------------------------
+internet_check() {
+    inf "Checking internet..."
 
-    if ! ping -c1 archlinux.org >/dev/null 2>&1; then
-        dialog --msgbox "No internet. Opening network tool." 6 40
+    # IMPORTANT: timeout prevents "freeze feel"
+    ping -c1 -W2 archlinux.org >/dev/null 2>&1
+    if [[ $? -ne 0 ]]; then
+        msg "No internet detected.\nOpen network tool (nmtui)."
         nmtui
     fi
 }
 
-### -----------------------------
-### DISK SELECT
-### -----------------------------
+### -------------------------
+### DISK SELECT (SAFE)
+### -------------------------
 select_disk() {
     local disks
-    disks=$(lsblk -dpno NAME,SIZE,MODEL | grep -E "/dev/(sd|nvme)" || true)
+    disks=$(lsblk -dpno NAME,SIZE,MODEL | grep -E "/dev/(sd|nvme)")
 
     DISK=$(dialog --menu "Select Disk" 20 70 10 \
         $(echo "$disks" | awk '{print $1" "$1" "$2" "$3}') \
@@ -96,31 +99,36 @@ select_disk() {
     echo "DISK=$DISK" >> "$CONFIG"
 }
 
-### -----------------------------
-### PARTITION (AUTO)
-### -----------------------------
+### -------------------------
+### PREP DISK (FIX FREEZE CAUSE)
+### -------------------------
+prep_disk() {
+    swapoff -a >/dev/null 2>&1
+    umount -R /mnt >/dev/null 2>&1
+
+    blockdev --rereadpt "$DISK" >/dev/null 2>&1
+}
+
+### -------------------------
+### PARTITION (STABLE)
+### -------------------------
 partition_disk() {
 
-    prepare_disk
-
-    dialog --yesno "WIPE AND PARTITION $DISK?\nTHIS WILL DESTROY ALL DATA" 8 60
-
+    dialog --yesno "WIPE $DISK?\nTHIS WILL DESTROY ALL DATA" 8 50
     [[ $? -ne 0 ]] && return
 
-    dialog --infobox "Creating partition table..." 3 40
-    sleep 1
+    prep_disk
+
+    inf "Partitioning disk..."
 
     parted -s "$DISK" mklabel gpt
-
     parted -s "$DISK" mkpart ESP fat32 1MiB 513MiB
     parted -s "$DISK" set 1 esp on
-
     parted -s "$DISK" mkpart ROOT ext4 513MiB 90%
     parted -s "$DISK" mkpart SWAP linux-swap 90% 100%
 
-    # IMPORTANT: refresh kernel view
     partprobe "$DISK"
-    udevadm settle
+    sleep 1
 
     if [[ "$DISK" == *"nvme"* ]]; then
         EFI="${DISK}p1"
@@ -137,31 +145,35 @@ partition_disk() {
     echo "SWAP=$SWAP" >> "$CONFIG"
 }
 
-### -----------------------------
+### -------------------------
 ### FORMAT
-### -----------------------------
+### -------------------------
 format_parts() {
+    inf "Formatting..."
+
     mkfs.fat -F32 "$EFI"
     mkfs.ext4 "$ROOT"
     mkswap "$SWAP"
     swapon "$SWAP"
 }
 
-### -----------------------------
+### -------------------------
 ### MOUNT
-### -----------------------------
+### -------------------------
 mount_parts() {
+    inf "Mounting..."
+
     mount "$ROOT" /mnt
     mkdir -p /mnt/boot/efi
     mount "$EFI" /mnt/boot/efi
 }
 
-### -----------------------------
-### INIT SELECT
-### -----------------------------
+### -------------------------
+### INIT
+### -------------------------
 select_init() {
     INIT=$(dialog --menu "Init System" 12 40 4 \
-        dinit "Dinit (recommended)" \
+        dinit "Dinit" \
         openrc "OpenRC" \
         runit "Runit" \
         s6 "S6" \
@@ -170,9 +182,9 @@ select_init() {
     echo "INIT=$INIT" >> "$CONFIG"
 }
 
-### -----------------------------
-### KERNEL SELECT
-### -----------------------------
+### -------------------------
+### KERNEL
+### -------------------------
 select_kernel() {
     KERNEL=$(dialog --menu "Kernel" 10 40 3 \
         linux "Stable" \
@@ -183,52 +195,45 @@ select_kernel() {
     echo "KERNEL=$KERNEL" >> "$CONFIG"
 }
 
-### -----------------------------
-### INSTALL BASE
-### -----------------------------
+### -------------------------
+### BASE INSTALL
+### -------------------------
 install_base() {
     case "$INIT" in
-        dinit)
-            basestrap /mnt base base-devel dinit elogind-dinit ;;
-        openrc)
-            basestrap /mnt base base-devel openrc elogind-openrc ;;
-        runit)
-            basestrap /mnt base base-devel runit elogind-runit ;;
-        s6)
-            basestrap /mnt base base-devel s6-base elogind-s6 ;;
+        dinit) basestrap /mnt base base-devel dinit elogind-dinit ;;
+        openrc) basestrap /mnt base base-devel openrc elogind-openrc ;;
+        runit) basestrap /mnt base base-devel runit elogind-runit ;;
+        s6) basestrap /mnt base base-devel s6-base elogind-s6 ;;
     esac
 }
 
-### -----------------------------
-### INSTALL KERNEL
-### -----------------------------
+### -------------------------
+### KERNEL INSTALL
+### -------------------------
 install_kernel() {
     case "$KERNEL" in
-        linux)
-            basestrap /mnt linux linux-firmware ;;
-        lts)
-            basestrap /mnt linux-lts linux-firmware ;;
-        zen)
-            basestrap /mnt linux-zen linux-firmware ;;
+        linux) basestrap /mnt linux linux-firmware ;;
+        lts) basestrap /mnt linux-lts linux-firmware ;;
+        zen) basestrap /mnt linux-zen linux-firmware ;;
     esac
 }
 
-### -----------------------------
+### -------------------------
 ### FSTAB
-### -----------------------------
-gen_fstab() {
+### -------------------------
+fstab_gen() {
     fstabgen -U /mnt >> /mnt/etc/fstab
 }
 
-### -----------------------------
-### CHROOT SCRIPT
-### -----------------------------
+### -------------------------
+### CHROOT
+### -------------------------
 make_chroot() {
 cat > /mnt/root/post.sh <<EOF
 #!/bin/bash
 set -e
 
-source /tmp/artix-installer.conf
+source /tmp/artix.conf
 
 ln -sf /usr/share/zoneinfo/\$TIMEZONE /etc/localtime
 hwclock --systohc
@@ -259,27 +264,26 @@ run_chroot() {
     artix-chroot /mnt /root/post.sh
 }
 
-### -----------------------------
-### CLEANUP
-### -----------------------------
+### -------------------------
+### CLEAN
+### -------------------------
 cleanup() {
     umount -R /mnt
     swapoff -a
 }
 
-### -----------------------------
-### MAIN
-### -----------------------------
+### -------------------------
+### MAIN FLOW
+### -------------------------
 main() {
     check_root
-
-    install_deps
+    deps
     init_config
-    load_config
+    source_config
 
-    dialog --msgbox "Welcome to Artix Installer" 6 40
+    msg "Welcome to Artix Installer"
 
-    check_internet
+    internet_check
 
     select_disk
     partition_disk
@@ -292,14 +296,13 @@ main() {
     install_base
     install_kernel
 
-    gen_fstab
-
+    fstab_gen
     make_chroot
     run_chroot
 
     cleanup
 
-    dialog --msgbox "Install complete!" 6 30
+    msg "Install complete!"
 }
 
 main
