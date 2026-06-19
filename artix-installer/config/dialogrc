@@ -1,0 +1,70 @@
+# config/dialogrc — dark theme for the Artix installer
+# Loaded via `export DIALOGRC=.../config/dialogrc` in installer.sh.
+# Format: dialog run-time configuration (see `man dialog`, RUNTIME CONFIGURATION).
+
+use_shadow = OFF
+use_colors = ON
+
+# Overall screen behind the dialog boxes.
+screen_color = (WHITE,BLACK,ON)
+shadow_color = (BLACK,BLACK,ON)
+
+# Generic box background/text.
+dialog_color = (WHITE,BLACK,OFF)
+
+# Title text at the top of a box.
+title_color = (WHITE,BLACK,ON)
+
+# Box border — this is the main accent color.
+border_color = (CYAN,BLACK,ON)
+border2_color = (CYAN,BLACK,OFF)
+
+# Buttons (<OK>, <Cancel>, ...).
+button_active_color = (BLACK,CYAN,ON)
+button_inactive_color = (WHITE,BLACK,OFF)
+button_key_active_color = (BLACK,CYAN,ON)
+button_key_inactive_color = (CYAN,BLACK,OFF)
+button_label_active_color = (BLACK,CYAN,ON)
+button_label_inactive_color = (WHITE,BLACK,ON)
+
+# Text input boxes (hostname, timezone, etc).
+inputbox_color = (WHITE,BLACK,OFF)
+inputbox_border_color = (CYAN,BLACK,ON)
+inputbox_border2_color = (CYAN,BLACK,OFF)
+
+# Search box (used inside menus when typing to filter).
+searchbox_color = (WHITE,BLACK,OFF)
+searchbox_title_color = (WHITE,BLACK,ON)
+searchbox_border_color = (CYAN,BLACK,ON)
+searchbox_border2_color = (CYAN,BLACK,OFF)
+
+# Scroll position indicator.
+position_indicator_color = (WHITE,BLACK,ON)
+
+# Menu box (disk selection, init/kernel pickers).
+menubox_color = (WHITE,BLACK,OFF)
+menubox_border_color = (CYAN,BLACK,ON)
+menubox_border2_color = (CYAN,BLACK,OFF)
+item_color = (WHITE,BLACK,OFF)
+item_selected_color = (BLACK,CYAN,ON)
+tag_color = (CYAN,BLACK,ON)
+tag_selected_color = (BLACK,CYAN,ON)
+tag_key_color = (CYAN,BLACK,ON)
+tag_key_selected_color = (BLACK,CYAN,ON)
+itemhelp_color = (CYAN,BLACK,OFF)
+
+# Checklists (unused today, themed for consistency if added later).
+check_color = (WHITE,BLACK,OFF)
+check_selected_color = (BLACK,CYAN,ON)
+
+# Arrows shown when a menu/list scrolls.
+uarrow_color = (CYAN,BLACK,ON)
+darrow_color = (CYAN,BLACK,ON)
+
+# Form fields (unused today, themed for consistency if added later).
+form_active_text_color = (BLACK,CYAN,ON)
+form_text_color = (WHITE,BLACK,ON)
+form_item_readonly_color = (CYAN,BLACK,ON)
+
+# Progress gauge fill.
+gauge_color = (BLACK,CYAN,ON)

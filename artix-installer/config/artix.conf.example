@@ -1,0 +1,17 @@
+# /tmp/artix.conf — written automatically by installer.sh, do not edit by hand
+# while the installer is running. Shown here as a reference template.
+
+DISK=/dev/nvme0n1
+EFI=/dev/nvme0n1p1
+ROOT=/dev/nvme0n1p2
+SWAP=/dev/nvme0n1p3
+
+INIT=dinit
+INIT_PKGS=base base-devel dinit elogind-dinit
+KERNEL=linux
+
+TIMEZONE=America/New_York
+HOSTNAME=ArtixPC
+FIRMWARE=uefi
+
+USERNAME=user
